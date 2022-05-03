@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧校园</title>
+    <!--引入资源-->
+    <link rel="stylesheet" href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css" />
+    <!-- <link rel="stylesheet" href="./index.css" /> -->
+    
+    <script type="text/javascript" src="./store.js"></script> 
+
+    <script type="text/javascript">
+        window._AMapSecurityConfig = {
+            securityJsCode:'1fa31f09853487bba3adcb27d752dbd5',
+        }
+    </script>
+<script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=b0a06f4feac4682287d13432159c5eff&plugin=AMap.GeoJSON"></script>
+<style>
+    html,body,
+    #container{
+        width: 100%;
+        height: 100%;
+        background-color: skyblue;
+    }
+</style>
+   
+</head>
+<body>
+    <!-- 创建地图容器 -->
+    <div id="container"></div>
+    <div class="info">点击地图标注热门地点,来打卡吧！</div>
+    <div class="input-card">
+        <h4>推荐浏览路线</h4>
+        <div class="input-item">
+            <button class="btn" onclick="startAnimation()">开始动画</button>
+    </div>
+
+    <!-- 加载地图 -->
+    <script>
+        //定义一个变量，保存一个对象
+        var map = new AMap.Map('container',
+        {
+            center:[110.3468,21.2803],     // 设置地图中心点的经纬度
+            zoom :16,                //地图的缩放比例（3~20）
+            viewMode :'3D',         
+            pitch:45,               //地图的俯仰角度
+        } )
+
+        // 加载控件
+        //安装plugin和添加控件
+        AMap.plugin(['AMap.ToolBar','AMap.Scale','AMap.ControlBar','AMap.MoveAnimation'],
+        function(){
+            map.addControl(new AMap.ToolBar({
+                 position: {
+                     top:'80px',
+                     right:'40px'
+                 }
+            })
+            )   //toolbar（放大缩小）
+            map.addControl(new AMap.Scale())      //Scale比例尺
+            map.addControl(new AMap.ControlBar()) //ControlBar 罗盘
+        })
+
+
+        //定义一个全局变量，保存geojson
+        var geojson = new AMap.GeoJSON({
+            geoJSON: null,
+        })
+
+
+        //如果存在数据，才导入数据
+        if(JSON.stringify(getData()) !='[]'){
+            geojson.importData(getData())
+
+            //恢复旧数据的点击事件
+            geojson.eachOverlay(function (item) {
+            item.on('click',function (e){
+                //让点击的marker对象的click属性+1
+                var ext = item.getExtData()
+                var click = ++ext._geoJsonProperties.click
+
+                //使用信息提示框显示
+                var infowindow = new AMap.InfoWindow({
+                    anchor:'top-center',
+                    content:`<div>打卡了${click}次</div>`,
+                })
+
+                //打开信息窗口
+                infowindow.open(map,item.getPosition())
+
+                saveData(geojson.toGeoJSON())
+                })
+            })
+         }
+
+         map.add(geojson)
+
+        //监听地图的点击事件
+        map.on('click',function(e){
+            var marker = new AMap.Marker({
+            position: e.lnglat,
+            extData:{
+                _geoJsonProperties:{
+                   gid:geojson.getOverlays().length + 1,
+                      click:0,
+                 },
+               },
+            })
+
+            //使用覆盖物的点击事件
+            marker.on('click',function (e){
+                 //让点击的marker对象的click属性+1
+                 var ext = marker.getExtData()
+                 var click = ++ext._geoJsonProperties.click
+
+                 //使用信息提示框显示
+                 var infowindow = new AMap.InfoWindow({
+                      anchor:'top-center',
+                      content:`<div>打卡了${click}次</div>`,
+                 })
+
+                 //打开信息窗口
+                infowindow.open(map,marker.getPosition())
+
+                 saveData(geojson.toGeoJSON())
+            })
+
+
+            //通过geojson对象来管理覆盖物，显示点
+           geojson.addOverlay(marker)
+           saveData(geojson.toGeoJSON())
+        })
+
+        function startAnimation(){
+        //路径规划
+              AMap.plugin('AMap.Driving',function (){
+                   var driving = new AMap.Driving({
+                        map:map,
+                        //驾车策略
+                        policy: AMap.DrivingPolicy.LEAST_TIME,
+                   })
+                   //设置起点和终点
+                   var start = new AMap.LngLat(110.335781,21.284235)
+                   var end = new AMap.LngLat(110.33904,21.288994)
+
+                   //通过geojson得到每一个点的坐标
+                   var opts = {
+                      waypoints :[],
+                      }
+
+                  geojson.eachOverlay(function (item){
+                         opts.waypoints.push(item.getPosition())
+                  })
+
+                   driving.search(start,end,opts,function (status,result){
+                          if (status == 'complete'){
+                             //实现轨迹模拟
+                             console.log(result)
+
+                             var lineArr =[]
+
+                             result.routes[0].steps.forEach(function (item){
+                                  lineArr.push(...item.path)
+                             })
+
+                             var marker =new AMap.Marker({
+                                  map:map,
+                                  position:start,
+                                  icon: 'https://webapi.amap.com/images/car.png',
+                                  offset:new AMap.Pixel(-26,-13),
+                                  autoRotation:true,
+                                  angle:-180,
+                             })
+
+                             var passedPolyline = new AMap.Polyline({
+                                  map:map,
+                                  strokeColor:'#AF5',
+                                  strockWeight:6,
+                              })
+
+                              marker.on('moving',function (e){
+                                    passedPolyline.setPath(e.passedPath)
+                              })
+                              map.setFitView()
+
+                              marker.moveAlong(lineArr,{
+                                    duration:500,
+                                    autoRotation: true,
+                              })
+
+                          }else {
+                             console.log('error')
+                          }
+                   })
+              })
+        }
+
+    </script>
+</body>
+</html>
